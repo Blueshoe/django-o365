@@ -1,5 +1,6 @@
 import threading
 from email.utils import parseaddr
+from io import BytesIO
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
@@ -84,10 +85,12 @@ class O365EmailBackend(BaseEmailBackend):
                 for attachment in getattr(email_message, "attachments", []):
                     if isinstance(attachment, str):
                         m.attachments.add(attachment)
-                    elif isinstance(attachment, tuple) and len(attachment) >= 2:
-                        filename, content = attachment[:2]
-                        mimetype = attachment[2] if len(attachment) > 2 else None
-                        m.attachments.add(name=filename, content=content, mimetype=mimetype)
+                    elif isinstance(attachment, tuple) and len(attachment) == 3:
+                        filename, content, mimetype = attachment
+                        # If content is not a BytesIO, wrap it
+                        if not isinstance(content, BytesIO):
+                            content = BytesIO(content)
+                        m.attachments.add([(content, filename)])
                 m.send()
             except Exception:
                 if not self.fail_silently:
