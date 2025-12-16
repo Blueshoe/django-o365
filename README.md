@@ -14,6 +14,9 @@ EMAIL_O365_TENANT_ID = 'my-client'
 EMAIL_O365_CLIENT_ID = 'my-client-id'
 EMAIL_O365_CLIENT_SECRET = 'super-secret'
 EMAIL_O365_SENDER = 'mysender@example.com'
+
+# set backend
+EMAIL_BACKEND = 'django_o365.backend.O365EmailBackend'
 ```
 
 ## Badges

@@ -4,6 +4,7 @@ from email.utils import parseaddr
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 from O365 import Account
+from O365.message import MessageAttachment  # Corrected import for MessageAttachment
 from django.core.mail.message import sanitize_address
 
 
@@ -87,7 +88,8 @@ class O365EmailBackend(BaseEmailBackend):
                     elif isinstance(attachment, tuple) and len(attachment) >= 2:
                         filename, content = attachment[:2]
                         mimetype = attachment[2] if len(attachment) > 2 else None
-                        m.attachments.add((filename, content, mimetype))
+                        att = MessageAttachment(name=filename, content=content, mimetype=mimetype)
+                        m.attachments.add(att)
                 m.send()
             except Exception:
                 if not self.fail_silently:
