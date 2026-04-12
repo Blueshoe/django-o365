@@ -27,7 +27,7 @@ CLASSIFIERS = [
 ]
 
 REQUIREMENTS = [
-    "django~=4.2.27",
+    "django>=4.2.27",
     "o365~=2.1.8",
 ]
 
