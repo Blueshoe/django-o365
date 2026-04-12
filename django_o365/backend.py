@@ -1,12 +1,9 @@
 import threading
-from email.utils import parseaddr
 from io import BytesIO
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 from O365 import Account
-from django.core.mail.message import sanitize_address
-
 
 class O365Exception(Exception):
     pass
@@ -70,18 +67,11 @@ class O365EmailBackend(BaseEmailBackend):
         """A helper method that does the actual sending."""
         if not email_message.recipients():
             return False
-        encoding = email_message.encoding or settings.DEFAULT_CHARSET
-        from_email = sanitize_address(email_message.from_email, encoding)
-        # from_email could be a formatted email string, e.g. "FOO <foo@bar.com>"
-        _, from_email_address = parseaddr(from_email)
-        recipients = [
-            sanitize_address(addr, encoding) for addr in email_message.recipients()
-        ]
-
+            
         with self._lock:
             try:
                 m = self.mailbox.new_message()
-                for recipient in recipients:
+                for recipient in email_message.recipients():
                     m.to.add(recipient)
                 m.subject = email_message.subject
 
