@@ -20,6 +20,7 @@ class O365EmailBackend(BaseEmailBackend):
         client_secret=None,
         sender=None,
         fail_silently=False,
+        token_backend=None,
         **kwargs,
     ):
         super(O365EmailBackend, self).__init__(fail_silently=fail_silently)
@@ -28,6 +29,7 @@ class O365EmailBackend(BaseEmailBackend):
         self.client_id = client_id or getattr(settings, "EMAIL_O365_CLIENT_ID", None)
         self.client_secret = client_secret or getattr(settings, "EMAIL_O365_CLIENT_SECRET", None)
         self.sender = sender or getattr(settings, "EMAIL_O365_SENDER", None)
+        self.token_backend = token_backend
         self.mailbox = None
         self._lock = threading.RLock()
 
@@ -36,7 +38,15 @@ class O365EmailBackend(BaseEmailBackend):
             raise ValueError("O365 credentials or sender not configured.")
 
         credentials = (self.client_id, self.client_secret)
-        account = Account(credentials, auth_flow_type="credentials", tenant_id=self.tenant_id)
+
+        account_kwargs = {
+            "auth_flow_type": "credentials",
+            "tenant_id": self.tenant_id,
+        }
+        if self.token_backend is not None:
+            account_kwargs["token_backend"] = self.token_backend
+
+        account = Account(credentials, **account_kwargs)
 
         if not account.authenticate():
             raise O365Exception("O365 authentication failed.")
