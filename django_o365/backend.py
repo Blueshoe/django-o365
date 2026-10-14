@@ -1,15 +1,28 @@
 import threading
+from email.message import Message
 from email.utils import parseaddr
 from io import BytesIO
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 from O365 import Account
-from django.core.mail.message import sanitize_address
 
 
 class O365Exception(Exception):
     pass
+
+
+def parse_address(address):
+    """
+    Split an address like "Name <foo@bar.com>" into a (name, address) tuple
+    as expected by O365 Recipients.
+    """
+    if "\n" in address or "\r" in address:
+        raise ValueError("Invalid address; address parts cannot contain newlines.")
+    name, addr = parseaddr(address)
+    if "@" not in addr:
+        raise ValueError(f'Invalid address "{address}"')
+    return name, addr
 
 
 class O365EmailBackend(BaseEmailBackend):
@@ -20,9 +33,12 @@ class O365EmailBackend(BaseEmailBackend):
         client_secret=None,
         sender=None,
         fail_silently=False,
-        **kwargs
+        **kwargs,
     ):
-        super(O365EmailBackend, self).__init__(fail_silently=fail_silently)
+        # Django 6.1+ expects subclasses to handle fail_silently themselves and
+        # to pass alias and unknown kwargs on to BaseEmailBackend.
+        super().__init__(**kwargs)
+        self.fail_silently = fail_silently
         # Get O365 credentials and sender from kwargs or Django settings
         self.tenant_id = tenant_id or getattr(settings, "EMAIL_O365_TENANT_ID", None)
         self.client_id = client_id or getattr(settings, "EMAIL_O365_CLIENT_ID", None)
@@ -71,18 +87,19 @@ class O365EmailBackend(BaseEmailBackend):
         if not email_message.recipients():
             return False
         encoding = email_message.encoding or settings.DEFAULT_CHARSET
-        from_email = sanitize_address(email_message.from_email, encoding)
-        # from_email could be a formatted email string, e.g. "FOO <foo@bar.com>"
-        _, from_email_address = parseaddr(from_email)
-        recipients = [
-            sanitize_address(addr, encoding) for addr in email_message.recipients()
-        ]
+        # Keep to, cc, bcc and reply_to apart, otherwise e.g. bcc recipients
+        # would be disclosed to all other recipients.
+        recipient_fields = {
+            field: [parse_address(addr) for addr in getattr(email_message, field)]
+            for field in ("to", "cc", "bcc", "reply_to")
+        }
 
         with self._lock:
             try:
                 m = self.mailbox.new_message()
-                for recipient in recipients:
-                    m.to.add(recipient)
+                for field, recipients in recipient_fields.items():
+                    for name, address in recipients:
+                        getattr(m, field).add((name, address) if name else address)
                 m.subject = email_message.subject
 
                 # Handle HTML emails if alternatives are present
@@ -105,12 +122,20 @@ class O365EmailBackend(BaseEmailBackend):
                     m.body_type = "Text"
 
                 # Attachments: Django EmailMessage.attachments is a list of
-                # (filename, content, mimetype) or file paths
+                # (filename, content, mimetype) tuples, MIME objects or file paths
                 for attachment in getattr(email_message, "attachments", []):
                     if isinstance(attachment, str):
                         m.attachments.add(attachment)
+                    elif isinstance(attachment, Message):
+                        # MIMEBase (Django < 6.0) or MIMEPart (Django 6.0+)
+                        content = BytesIO(attachment.get_payload(decode=True) or b"")
+                        filename = attachment.get_filename() or "attachment"
+                        m.attachments.add([(content, filename)])
                     elif isinstance(attachment, tuple) and len(attachment) == 3:
                         filename, content, mimetype = attachment
+                        # Django decodes text/* attachments to str
+                        if isinstance(content, str):
+                            content = content.encode(encoding)
                         # If content is not a BytesIO, wrap it
                         if not isinstance(content, BytesIO):
                             content = BytesIO(content)
