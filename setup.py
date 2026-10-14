@@ -10,6 +10,9 @@ def read(fname):
 CLASSIFIERS = [
     "Development Status :: 4 - Beta",
     "Framework :: Django",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
@@ -27,7 +30,7 @@ CLASSIFIERS = [
 ]
 
 REQUIREMENTS = [
-    "django~=4.2.27",
+    "django>=5.0,<6.0",
     "o365~=2.1.8",
 ]
 
