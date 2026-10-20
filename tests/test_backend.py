@@ -51,9 +51,7 @@ class TestO365EmailBackend(unittest.TestCase):
 
     @patch("django_o365.backend.Account")
     def test_missing_credentials_raises_valueerror(self, mock_account_cls):
-        backend = O365EmailBackend(
-            tenant_id=None, client_id=None, client_secret=None, sender=None
-        )
+        backend = O365EmailBackend(tenant_id=None, client_id=None, client_secret=None, sender=None)
         with self.assertRaises(ValueError):
             backend.open()
 

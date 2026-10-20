@@ -20,15 +20,13 @@ class O365EmailBackend(BaseEmailBackend):
         client_secret=None,
         sender=None,
         fail_silently=False,
-        **kwargs
+        **kwargs,
     ):
         super(O365EmailBackend, self).__init__(fail_silently=fail_silently)
         # Get O365 credentials and sender from kwargs or Django settings
         self.tenant_id = tenant_id or getattr(settings, "EMAIL_O365_TENANT_ID", None)
         self.client_id = client_id or getattr(settings, "EMAIL_O365_CLIENT_ID", None)
-        self.client_secret = client_secret or getattr(
-            settings, "EMAIL_O365_CLIENT_SECRET", None
-        )
+        self.client_secret = client_secret or getattr(settings, "EMAIL_O365_CLIENT_SECRET", None)
         self.sender = sender or getattr(settings, "EMAIL_O365_SENDER", None)
         self.mailbox = None
         self._lock = threading.RLock()
@@ -38,9 +36,7 @@ class O365EmailBackend(BaseEmailBackend):
             raise ValueError("O365 credentials or sender not configured.")
 
         credentials = (self.client_id, self.client_secret)
-        account = Account(
-            credentials, auth_flow_type="credentials", tenant_id=self.tenant_id
-        )
+        account = Account(credentials, auth_flow_type="credentials", tenant_id=self.tenant_id)
 
         if not account.authenticate():
             raise O365Exception("O365 authentication failed.")
@@ -74,9 +70,7 @@ class O365EmailBackend(BaseEmailBackend):
         from_email = sanitize_address(email_message.from_email, encoding)
         # from_email could be a formatted email string, e.g. "FOO <foo@bar.com>"
         _, from_email_address = parseaddr(from_email)
-        recipients = [
-            sanitize_address(addr, encoding) for addr in email_message.recipients()
-        ]
+        recipients = [sanitize_address(addr, encoding) for addr in email_message.recipients()]
 
         with self._lock:
             try:
@@ -86,10 +80,7 @@ class O365EmailBackend(BaseEmailBackend):
                 m.subject = email_message.subject
 
                 # Handle HTML emails if alternatives are present
-                if (
-                    hasattr(email_message, "alternatives")
-                    and email_message.alternatives
-                ):
+                if hasattr(email_message, "alternatives") and email_message.alternatives:
                     html_set = False
                     for content, mimetype in email_message.alternatives:
                         if mimetype == "text/html":

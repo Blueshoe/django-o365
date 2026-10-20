@@ -13,21 +13,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.12'
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: uv sync --locked --dev
 
-      - name: Run black (check only)
-        run: black --check .
+      - name: Run Ruff formatter
+        run: uv run ruff format --check .
 
-      - name: Run flake8
-        run: flake8 .
+      - name: Run Ruff linter
+        run: uv run ruff check .
 
       - name: Run tests
-        run: pytest tests/
+        run: uv run pytest tests/
