@@ -31,7 +31,7 @@ EMAIL_BACKEND = "django_o365.backend.O365EmailBackend"
 Badges have been created with [genbadge](https://github.com/smarie/python-genbadge):
 ```bash
 # pytest
-pytest --junitxml=reports/junit/junit.xml --html=reports/junit/report.html
+uv run pytest --junitxml=reports/junit/junit.xml --html=reports/junit/report.html
 genbadge tests
 
 # coverage
