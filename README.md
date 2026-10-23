@@ -1,5 +1,5 @@
-[![Tests Status](./reports/junit/tests-badge.svg?dummy=8484744)](./reports/junit/report.html)
-[![Coverage Status](./reports/coverage/coverage-badge.svg?dummy=8484744)](./reports/coverage/htmlcov/index.html)
+[![Tests Status](./reports/junit/tests-badge.svg?dummy=8484744)](https://github.com/Blueshoe/django-o365/raw/main/reports/junit/tests-badge.svg?dummy=8484744)
+[![Coverage Status](./reports/coverage/coverage-badge.svg?dummy=8484744)](https://github.com/Blueshoe/django-o365/raw/main/reports/coverage/coverage-badge.svg?dummy=8484744)
 # django-o365
 Simple EmailBackend for Django to work with Microsoft Exchange Online, via o365 package.
 

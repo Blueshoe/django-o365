@@ -33,8 +33,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "django~=4.2.27",
-    "o365~=2.1.8",
+    "django~=5.2.18",
+    "o365~=2.1.10",
 ]
 
 [project.urls]
