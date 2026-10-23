@@ -231,3 +231,37 @@ class TestO365EmailBackend(unittest.TestCase):
         self.assertEqual(mock_message.body, html_content)
         self.assertEqual(mock_message.body_type, "HTML")
         mock_message.send.assert_called_once()
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_text_attachment_string_content(self, mock_account_cls):
+        mock_account = MagicMock()
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_account_cls.return_value = mock_account
+        mock_account.authenticate.return_value = True
+        mock_account.mailbox.return_value = mock_mailbox
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="With Text Attachment",
+            body="Body",
+            from_email="sender@example.com",
+            to=["to@example.com"],
+        )
+        email.attachments = [("file.txt", "hello world", "text/plain")]
+        result = backend._send(email)
+        self.assertTrue(result)
+        args, kwargs = mock_message.attachments.add.call_args
+        self.assertEqual(len(args), 1)
+        attachment_arg = args[0]
+        self.assertIsInstance(attachment_arg, list)
+        self.assertEqual(len(attachment_arg), 1)
+        content_obj, filename = attachment_arg[0]
+        self.assertEqual(filename, "file.txt")
+        self.assertEqual(content_obj.read(), b"hello world")
