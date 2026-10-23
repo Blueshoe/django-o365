@@ -102,10 +102,17 @@ class O365EmailBackend(BaseEmailBackend):
                         m.attachments.add(attachment)
                     elif isinstance(attachment, tuple) and len(attachment) == 3:
                         filename, content, mimetype = attachment
-                        # If content is not a BytesIO, wrap it
-                        if not isinstance(content, BytesIO):
-                            content = BytesIO(content)
-                        m.attachments.add([(content, filename)])
+                        # O365 need a binary file-like object for attachments,
+                        # so we wrap the content in BytesIO if necessary
+                        if hasattr(content, "read"):
+                            attachment_file = content
+                        elif isinstance(content, str):
+                            attachment_file = BytesIO(
+                                content.encode(email_message.encoding or settings.DEFAULT_CHARSET)
+                            )
+                        else:
+                            attachment_file = BytesIO(content)
+                        m.attachments.add([(attachment_file, filename)])
                 m.send()
             except Exception:
                 if not self.fail_silently:
