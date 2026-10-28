@@ -4,14 +4,18 @@ from django.conf import settings
 if not settings.configured:
     settings.configure(
         DEFAULT_CHARSET="utf-8",
-        EMAIL_BACKEND="django_o365.backend.O365EmailBackend",
     )
     django.setup()
 
 import unittest
+from email.message import MIMEPart
+from email.mime.application import MIMEApplication
+from email.mime.message import MIMEMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from unittest.mock import patch, MagicMock
 from django.core.mail import EmailMessage
-from django_o365.backend import O365EmailBackend, O365Exception
+from django_o365.backend import O365EmailBackend, O365Exception, parse_address
 
 
 class TestO365EmailBackend(unittest.TestCase):
@@ -265,3 +269,220 @@ class TestO365EmailBackend(unittest.TestCase):
         content_obj, filename = attachment_arg[0]
         self.assertEqual(filename, "file.txt")
         self.assertEqual(content_obj.read(), b"hello world")
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_non_ascii_text_attachment(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="With Text Attachment",
+            body="Body",
+            from_email="sender@example.com",
+            to=["to@example.com"],
+        )
+        # Django decodes text/* attachments to str
+        email.attach("file.txt", "Grüße".encode("utf-8"), "text/plain")
+        result = backend._send(email)
+        self.assertTrue(result)
+        args, kwargs = mock_message.attachments.add.call_args
+        content_obj, filename = args[0][0]
+        self.assertEqual(filename, "file.txt")
+        self.assertEqual(content_obj.read(), "Grüße".encode("utf-8"))
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_display_name_recipient(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="Display Name",
+            body="Body",
+            from_email="Sender <sender@example.com>",
+            to=["Jörg Müller <joerg@example.com>"],
+        )
+        result = backend._send(email)
+        self.assertTrue(result)
+        mock_message.to.add.assert_called_once_with(("Jörg Müller", "joerg@example.com"))
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_invalid_recipient_raises(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="Invalid",
+            body="Body",
+            from_email="sender@example.com",
+            to=["not-an-address"],
+        )
+        with self.assertRaises(ValueError):
+            backend._send(email)
+        mock_mailbox.new_message.assert_not_called()
+
+    def test_parse_address(self):
+        self.assertEqual(parse_address("foo@example.com"), ("", "foo@example.com"))
+        self.assertEqual(
+            parse_address("Jörg Müller <joerg@example.com>"),
+            ("Jörg Müller", "joerg@example.com"),
+        )
+        self.assertEqual(parse_address('"a b"@example.com'), ("", '"a b"@example.com'))
+        for address in (
+            "not-an-address",
+            "user@example.com trailing",
+            "a@example.com, b@example.com",
+            "foo@example.com\nBcc: evil@example.com",
+            "",
+        ):
+            with self.subTest(address=address):
+                with self.assertRaises(ValueError):
+                    parse_address(address)
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_keeps_cc_bcc_and_reply_to_separate(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="Recipients",
+            body="Body",
+            from_email="sender@example.com",
+            to=["to@example.com"],
+            cc=["Cc Person <cc@example.com>"],
+            bcc=["bcc@example.com"],
+            reply_to=["reply@example.com"],
+        )
+        result = backend._send(email)
+        self.assertTrue(result)
+        mock_message.to.add.assert_called_once_with("to@example.com")
+        mock_message.cc.add.assert_called_once_with(("Cc Person", "cc@example.com"))
+        mock_message.bcc.add.assert_called_once_with("bcc@example.com")
+        mock_message.reply_to.add.assert_called_once_with("reply@example.com")
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_bcc_only(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="Bcc only",
+            body="Body",
+            from_email="sender@example.com",
+            bcc=["a@example.com", "b@example.com"],
+        )
+        result = backend._send(email)
+        self.assertTrue(result)
+        mock_message.to.add.assert_not_called()
+        self.assertEqual(mock_message.bcc.add.call_count, 2)
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_mime_attachment(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        mime_attachments = [MIMEApplication(b"%PDF", Name="file.pdf")]
+        mime_part = MIMEPart()
+        mime_part.set_content(b"%PDF", "application", "pdf", filename="part.pdf")
+        mime_attachments.append(mime_part)
+        mime_attachments[0]["Content-Disposition"] = 'attachment; filename="file.pdf"'
+        for mime_attachment in mime_attachments:
+            mock_message.reset_mock()
+            email = EmailMessage(
+                subject="MIME Attachment",
+                body="Body",
+                from_email="sender@example.com",
+                to=["to@example.com"],
+            )
+            email.attachments = [mime_attachment]
+            result = backend._send(email)
+            self.assertTrue(result)
+            args, kwargs = mock_message.attachments.add.call_args
+            content_obj, filename = args[0][0]
+            self.assertEqual(filename, mime_attachment.get_filename())
+            self.assertEqual(content_obj.read(), b"%PDF")
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_multipart_mime_attachment(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        inner = MIMEText("Forwarded body")
+        inner["Subject"] = "Forwarded"
+        rfc822 = MIMEMessage(inner)
+        rfc822["Content-Disposition"] = 'attachment; filename="forwarded.eml"'
+        multipart = MIMEMultipart()
+        multipart.attach(MIMEText("Part body"))
+        for mime_attachment, expected_filename, expected_content in (
+            (rfc822, "forwarded.eml", inner.as_bytes()),
+            (multipart, "attachment", multipart.as_bytes()),
+        ):
+            with self.subTest(content_type=mime_attachment.get_content_type()):
+                mock_message.reset_mock()
+                email = EmailMessage(
+                    subject="Multipart MIME Attachment",
+                    body="Body",
+                    from_email="sender@example.com",
+                    to=["to@example.com"],
+                )
+                email.attachments = [mime_attachment]
+                result = backend._send(email)
+                self.assertTrue(result)
+                args, kwargs = mock_message.attachments.add.call_args
+                content_obj, filename = args[0][0]
+                self.assertEqual(filename, expected_filename)
+                content = content_obj.read()
+                self.assertTrue(content)
+                self.assertEqual(content, expected_content)
+
+    def test_fail_silently_is_set_on_backend(self):
+        backend = O365EmailBackend(fail_silently=True)
+        self.assertTrue(backend.fail_silently)
+        backend = O365EmailBackend()
+        self.assertFalse(backend.fail_silently)
