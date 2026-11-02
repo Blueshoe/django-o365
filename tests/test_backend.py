@@ -10,6 +10,7 @@ if not settings.configured:
 import unittest
 from email.message import MIMEPart
 from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
 from email.mime.message import MIMEMessage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -346,7 +347,14 @@ class TestO365EmailBackend(unittest.TestCase):
             ("Jörg Müller", "joerg@example.com"),
         )
         self.assertEqual(parse_address('"a b"@example.com'), ("", '"a b"@example.com'))
+        self.assertEqual(
+            parse_address(("Jörg Müller", "joerg@example.com")),
+            ("Jörg Müller", "joerg@example.com"),
+        )
+        self.assertEqual(parse_address((None, "joerg@example.com")), ("", "joerg@example.com"))
         for address in (
+            ("Name", "not-an-address"),
+            ("Name\nBcc: evil@example.com", "joerg@example.com"),
             "not-an-address",
             "user@example.com trailing",
             "a@example.com, b@example.com",
@@ -480,6 +488,98 @@ class TestO365EmailBackend(unittest.TestCase):
                 content = content_obj.read()
                 self.assertTrue(content)
                 self.assertEqual(content, expected_content)
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_tuple_recipient(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="Tuple Recipient",
+            body="Body",
+            from_email="sender@example.com",
+            to=[("Jane Doe", "jane@example.com")],
+        )
+        result = backend._send(email)
+        self.assertTrue(result)
+        mock_message.to.add.assert_called_once_with(("Jane Doe", "jane@example.com"))
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_ignores_empty_recipients(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        mock_message = MagicMock()
+        mock_mailbox.new_message.return_value = mock_message
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        email = EmailMessage(
+            subject="Empty Recipients",
+            body="Body",
+            from_email="sender@example.com",
+            to=["to@example.com", ""],
+            cc=[""],
+            bcc=[None],
+        )
+        result = backend._send(email)
+        self.assertTrue(result)
+        mock_message.to.add.assert_called_once_with("to@example.com")
+        mock_message.cc.add.assert_not_called()
+        mock_message.bcc.add.assert_not_called()
+
+    @patch("django_o365.backend.Account")
+    def test_send_message_with_inline_mime_attachment(self, mock_account_cls):
+        mock_mailbox = MagicMock()
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.mailbox = mock_mailbox
+        png = b"\x89PNG\r\n\x1a\n"
+        cases = []
+        image = MIMEImage(png, "png")
+        image["Content-ID"] = "<logo>"
+        cases.append((image, "logo", True))
+        image = MIMEImage(png, "png")
+        image["Content-ID"] = "<logo>"
+        image["Content-Disposition"] = 'inline; filename="logo.png"'
+        cases.append((image, "logo", True))
+        image = MIMEImage(png, "png")
+        image["Content-ID"] = "<logo>"
+        image["Content-Disposition"] = 'attachment; filename="logo.png"'
+        cases.append((image, "logo", False))
+        for mime_attachment, expected_content_id, expected_inline in cases:
+            with self.subTest(disposition=mime_attachment.get_content_disposition()):
+                mock_message = MagicMock()
+                mock_mailbox.new_message.return_value = mock_message
+                attachment = MagicMock(content_id=None, is_inline=False)
+                mock_message.attachments.__getitem__.return_value = attachment
+                email = EmailMessage(
+                    subject="Inline Attachment",
+                    body="Body",
+                    from_email="sender@example.com",
+                    to=["to@example.com"],
+                )
+                email.attachments = [mime_attachment]
+                result = backend._send(email)
+                self.assertTrue(result)
+                args, kwargs = mock_message.attachments.add.call_args
+                content_obj, filename = args[0][0]
+                self.assertEqual(content_obj.read(), png)
+                self.assertEqual(attachment.content_id, expected_content_id)
+                self.assertEqual(attachment.is_inline, expected_inline)
 
     def test_fail_silently_is_set_on_backend(self):
         backend = O365EmailBackend(fail_silently=True)

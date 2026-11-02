@@ -17,8 +17,15 @@ def parse_address(address):
     """
     Split an address like "Name <foo@bar.com>" into a (name, address) tuple
     as expected by O365 Recipients. Like Django's sanitize_address(), the
-    entire input must be parsed, otherwise a ValueError is raised.
+    entire input must be parsed, otherwise a ValueError is raised. A
+    (name, address) tuple is accepted as well.
     """
+    if isinstance(address, tuple):
+        name, address = address
+        name = name or ""
+        if "\n" in name or "\r" in name:
+            raise ValueError("Invalid address; address parts cannot contain newlines.")
+        return name, parse_address(address)[1]
     if "\n" in address or "\r" in address:
         raise ValueError("Invalid address; address parts cannot contain newlines.")
     try:
@@ -105,7 +112,7 @@ class O365EmailBackend(BaseEmailBackend):
         # Keep to, cc, bcc and reply_to apart, otherwise e.g. bcc recipients
         # would be disclosed to all other recipients.
         recipient_fields = {
-            field: [parse_address(addr) for addr in getattr(email_message, field)]
+            field: [parse_address(addr) for addr in getattr(email_message, field) if addr]
             for field in ("to", "cc", "bcc", "reply_to")
         }
 
@@ -143,6 +150,14 @@ class O365EmailBackend(BaseEmailBackend):
                         content = BytesIO(mime_attachment_content(attachment))
                         filename = attachment.get_filename() or "attachment"
                         m.attachments.add([(content, filename)])
+                        # Keep inline attachments (e.g. images referenced via
+                        # "cid:" in the HTML body) inline
+                        content_id = attachment.get("Content-ID")
+                        disposition = attachment.get_content_disposition()
+                        if content_id:
+                            m.attachments[-1].content_id = content_id.strip().strip("<>")
+                        if disposition == "inline" or (content_id and disposition is None):
+                            m.attachments[-1].is_inline = True
                     elif isinstance(attachment, tuple) and len(attachment) == 3:
                         filename, content, mimetype = attachment
                         # O365 need a binary file-like object for attachments,
