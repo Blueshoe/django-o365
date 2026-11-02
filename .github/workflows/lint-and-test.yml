@@ -9,6 +9,10 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -16,7 +20,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.3.0
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
           enable-cache: true
 
       - name: Install dependencies
@@ -29,4 +33,4 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest tests/
+        run: uv run pytest -W error tests/
