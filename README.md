@@ -40,3 +40,7 @@ coverage xml
 coverage html
 genbadge coverage
 ```
+
+## Versioning
+This project adheres to semantic versioning and uses [bump-my-version](https://github.com/callowayproject/bump-my-version). 
+The config is in `.bumpversion.toml`.
