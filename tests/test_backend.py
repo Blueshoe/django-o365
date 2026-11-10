@@ -265,3 +265,52 @@ class TestO365EmailBackend(unittest.TestCase):
         content_obj, filename = attachment_arg[0]
         self.assertEqual(filename, "file.txt")
         self.assertEqual(content_obj.read(), b"hello world")
+
+    @patch("django_o365.backend.Account")
+    def test_positional_args_fail_silently_backward_compat(self, mock_account_cls):
+        # The 5th positional argument must remain fail_silently, not token_backend,
+        # so O365EmailBackend(tenant, client, secret, sender, True) keeps error
+        # suppression enabled and leaves token_backend as None.
+        backend = O365EmailBackend(
+            "tenant",
+            "client",
+            "secret",
+            "sender@example.com",
+            True,
+        )
+        self.assertTrue(backend.fail_silently)
+        self.assertIsNone(backend.token_backend)
+
+    @patch("django_o365.backend.Account")
+    def test_token_backend_forwarded_to_account(self, mock_account_cls):
+        from O365 import FileSystemTokenBackend
+
+        mock_account = MagicMock()
+        mock_account_cls.return_value = mock_account
+        mock_account.authenticate.return_value = True
+        token_backend = FileSystemTokenBackend()
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+            token_backend=token_backend,
+        )
+        backend.open()
+        _, kwargs = mock_account_cls.call_args
+        self.assertIs(kwargs["token_backend"], token_backend)
+
+    @patch("django_o365.backend.Account")
+    def test_token_backend_not_passed_when_none(self, mock_account_cls):
+        mock_account = MagicMock()
+        mock_account_cls.return_value = mock_account
+        mock_account.authenticate.return_value = True
+        backend = O365EmailBackend(
+            tenant_id="tenant",
+            client_id="client",
+            client_secret="secret",
+            sender="sender@example.com",
+        )
+        backend.open()
+        _, kwargs = mock_account_cls.call_args
+        self.assertNotIn("token_backend", kwargs)
